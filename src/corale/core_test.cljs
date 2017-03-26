@@ -45,23 +45,39 @@
 
 (system-time)
 
-(defn ^array test-comp
-  ([size]
-     (js/Array. size))
-  ([type size]
-     (test-comp size))
-  ([type size & more-sizes]
-   (let [dims more-sizes
-          dimarray (test-comp size)]
-      (dotimes [i (alength dimarray)]
-        (aset dimarray i (apply test-comp nil dims)))
-      dimarray)))
-
 (make-array 2)
 (make-array nil 2)
 (make-array nil 2 2)
 (make-array nil 3 2 2)
 (make-array nil 3 2 2 2)
+(let [a #js [1 2]]
+  (identical? a (aclone a)))
+
+(array)
+(array nil)
+(array "e" "r" "g" 4 5)
+
+;; emits a warning, the cljs.core version too
+#_(aget (array) 2)
+(let [a #js []]
+  (aset a 3 4)
+  a)
+
+(alength #js [])
+(alength #js [1 2 3])
+
+(into-array #js {:e "e" :2 3})
+
+(js-invoke "ed" "split" "")
+
+(instance? Symbol 'r)
+(instance? Keyword :f)
 
 #_(arr #js {:e "e"})
 
+;;;;;;;;;;;
+
+;; emit-apply-to
+;; emit-variadic-fn-method
+;; emit* :fn , (when variadic ...)
+;; emit :invoke

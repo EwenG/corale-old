@@ -1,7 +1,7 @@
 (ns corale.core
   (:refer-clojure :exclude [identical? nil? number? some? string? dotimes instance? symbol?
                             make-array
-                            and or
+                            and or if-not
                             alength aclone
                             deftype extend-type defprotocol
                             inc dec + - * / < <= > >= max min
@@ -19,12 +19,12 @@
                             bit-shift-right-zero-fill unsigned-bit-shift-right bit-set
                             == pos? zero? neg?
                             str keyword?
-                            
-                            fn defn destructure let aset aget doseq loop])
+                            fn defn defn- destructure let aset aget doseq loop])
   (:require [cljs.analyzer :as ana]
             [cljs.compiler :as comp]
             [cljs.env :as env]))
 
+(load "compiler")
 (alias 'core 'clojure.core)
 
 (core/defmacro exclude-core []
@@ -33,22 +33,22 @@
                     ~'string? ~'char? ~'any? ~'type ~'type->str
                     ~'apply
                     ~'make-array ~'array ~'dotimes
-                    ~'and ~'or
+                    ~'and ~'or ~'if-not
                     ~'system-time
                     ~'alength ~'aclone
                     ~'aset ~'aget
                     ~'into-array ~'reduce
                     ~'js-invoke
-                    ~'ICollection ~'ILookup ~'IEquiv ~'-lookup ~'-equiv
-                    ~'IWriter ~'IPrintWithWriter ~'->StringBufferWriter
+                    ~'IFn ~'ICollection ~'ILookup ~'IEquiv ~'-invoke ~'-lookup ~'-equiv
+                    ~'IWriter ~'IPrintWithWriter ~'StringBufferWriter ~'->StringBufferWriter
                     ~'-write ~'-flush ~'pr-str* ~'-pr-writer
                     ~'int-rotate-left ~'imul ~'m3-seed ~'m3-C1 ~'m3-C2 ~'m3-mix-K1 ~'m3-mix-H1
                     ~'m3-fmix ~'m3-hash-int ~'m3-hash-unencoded-chars
                     ~'string-hash-cache ~'string-hash-cache-count
                     ~'= ~'compare
                     ~'hash-string* ~'add-to-string-hash-cache ~'hash-string ~'hash
-                    ~'IHash ~'-hash ~'hash-combine
-                    ~'symbol? ~'hash-symbol ~'compare-symbols
+                    ~'IHash ~'-hash ~'hash-combine ~'caching-hash
+                    ~'Symbol ~'->Symbol ~'symbol? ~'hash-symbol ~'compare-symbols
                     ~'deftype ~'dt->et ~'fast-path-protocols ~'defprotocol ~'missing-protocol
                     ~'fast-path-protocol-partitions-count ~'extend-type ~'extend-prefix
                     ~'get
@@ -103,7 +103,7 @@
                     ~'bit-shift-right-zero-fill ~'unsigned-bit-shift-right ~'bit-set ~'bit-count
                     ~'== ~'pos? ~'zero? ~'neg?
                     ~'str ~'subs ~'reverse
-                    ~'hash-keyword ~'compare-keywords
+                    ~'Keyword ~'->Keyword ~'hash-keyword ~'compare-keywords
                     ~'keyword? ~'keyword-identical? ~'symbol-identical? ~'namespace ~'name
                     ~'ident? ~'simple-ident? ~'qualified-ident? ~'simple-symbol?
                     ~'qualified-symbol? ~'simple-keyword? ~'qualified-keyword?
@@ -112,10 +112,11 @@
                     ~'int-array ~'long-array ~'double-array ~'object-array
                     ~'concat ~'spread ~'bounded-count
                     ~'apply-to ~'gen-apply-to
-
+                    ~'not=
+                    ~'defn defn- ~'fn ~'let
+                    
                     ~'coercive-= ~'coercive-boolean  ~'fn->comparator ~'compare-indexed
                     
-                    ~'defn ~'fn ~'let
                     ~'Atom ~'->Atom ~'atom ~'add-watch ~'remove-watch ~'reset! ~'swap!
                     ~'compare-and-set! ~'set-validator! ~'get-validator]))
 
@@ -131,23 +132,19 @@
                ~'aset ~'aget
                ~'into-array ~'reduce
                ~'js-invoke
-               ~'ICollection ~'ILookup ~'IEquiv ~'-lookup ~'-equiv
-               ~'IWriter ~'IPrintWithWriter ~'->StringBufferWriter
+               ~'IFn ~'ICollection ~'ILookup ~'IEquiv ~'-lookup ~'-equiv ~'-invoke
+               ~'IWriter ~'IPrintWithWriter ~'StringBufferWriter ~'->StringBufferWriter
                ~'-write ~'-flush ~'pr-str* ~'-pr-writer
-               ~'int-rotate-left ~'imul ~'m3-seed ~'m3-C1 ~'m3-C2 ~'m3-mix-K1 ~'m3-mix-H1
-               ~'m3-fmix ~'m3-hash-int ~'m3-hash-unencoded-chars
-               ~'string-hash-cache ~'string-hash-cache-count
+               ~'int-rotate-left
                ~'= ~'compare
-               ~'hash-string* ~'add-to-string-hash-cache ~'hash-string ~'hash
-               ~'IHash ~'-hash ~'hash-combine
-               ~'symbol? ~'hash-symbol ~'compare-symbols
-               ~'deftype ~'dt->et ~'fast-path-protocols ~'defprotocol ~'missing-protocol
-               ~'fast-path-protocol-partitions-count ~'extend-type ~'extend-prefix
+               ~'hash ~'IHash ~'-hash
+               ~'Symbol ~'->Symbol ~'symbol? ~'compare-symbols
+               ~'deftype ~'defprotocol
+               ~'extend-type
                ~'get
                ~'this-as ~'js-this
                ~'INamed ~'-name ~'-namespace ~'symbol
                ~'first
-               ~'mix-collection-hash ~'empty-ordered-hash ~'empty-unordered-hash
                ~'ICounted ~'-count ~'IComparable ~'-compare
                ~'Inst ~'inst-ms* ~'inst-ms ~'inst?
                ~'inc ~'dec ~'+
@@ -169,7 +166,7 @@
                ~'associative? ~'sequential? ~'sorted? ~'reduceable? ~'map?
                ~'IRecord ~'record?
                ~'js-obj ~'js-keys ~'js-delete
-               ~'lookup-sentinel ~'false? ~'true? ~'undefined? ~'boolean?
+               ~'false? ~'true? ~'undefined? ~'boolean?
                ~'boolean ~'ifn?
                ~'integer? ~'int? ~'pos-int? ~'neg-int? ~'nat-int? ~'float? ~'double?
                ~'infinite?
@@ -178,7 +175,7 @@
                ~'IKVReduce ~'-kv-reduce
                ~'identity ~'completing ~'transduce
                ~'+ ~'- ~'* ~'/ ~'divide ~'< ~'<= ~'> ~'>= ~'max ~'min
-               ~'byte ~'short ~'float ~'double ~'char ~'mod
+               ~'byte ~'short ~'float ~'double ~'char
                ~'unchecked-byte ~'unchecked-char 
                ~'unchecked-short ~'unchecked-float ~'unchecked-double
                ~'unchecked-add ~'unchecked-add-int ~'unchecked-dec ~'unchecked-dec-int
@@ -194,7 +191,7 @@
                ~'bit-shift-right-zero-fill ~'unsigned-bit-shift-right ~'bit-set ~'bit-count
                ~'== ~'pos? ~'zero? ~'neg?
                ~'str ~'subs ~'reverse
-               ~'hash-keyword ~'compare-keywords
+               ~'Keyword ~'->Keyword ~'hash-keyword ~'compare-keywords
                ~'keyword? ~'keyword-identical? ~'symbol-identical? ~'namespace ~'name
                ~'ident? ~'simple-ident? ~'qualified-ident? ~'simple-symbol?
                ~'qualified-symbol? ~'simple-keyword? ~'qualified-keyword?
@@ -202,6 +199,7 @@
                ~'to-array ~'to-array-2d
                ~'int-array ~'long-array ~'double-array ~'object-array
                ~'concat
+               ~'not=
 
                ~'arr ~'IArrayable ~'-arr
                
@@ -215,10 +213,10 @@
                   [exclude-core defn fn let loop dotimes and or
                    alength aget aset array js-obj extend-type deftype
                    defprotocol this-as + false? inc true? zero?
-                   instance? < > + - == / * int bit-xor bit-or bit-shift-left
+                   < > + - == / * int bit-xor bit-or bit-shift-left
                    unsigned-bit-shift-right bit-and js-mod bit-shift-right
                    str dec >= pos? neg? keyword? symbol? doseq unchecked-inc
-                   coercive-boolean make-array]]))
+                   coercive-boolean if-not defn-]]))
              nil nil)
   nil)
 
@@ -303,6 +301,13 @@
 (core/defmacro some? [x]
   `(corale.core/not (nil? ~x)))
 
+(core/defmacro if-not
+  "Evaluates test. If logical false, evaluates and returns then expr, 
+  otherwise else expr, if supplied, else nil."
+  ([test then] `(if-not ~test ~then nil))
+  ([test then else]
+   `(if (corale.core/not ~test) ~then ~else)))
+
 (core/defmacro coercive-= [x y]
   (bool-expr (core/list 'js* "(~{} == ~{})" x y)))
 
@@ -343,10 +348,10 @@
   (bool-expr (core/list 'js* "typeof ~{} === 'number'" x)))
 
 (core/defmacro symbol? [x]
-  (bool-expr `(instance? cljs.core/Symbol ~x)))
+  (bool-expr `(instance? corale.core/Symbol ~x)))
 
 (core/defmacro keyword? [x]
-  (bool-expr `(instance? cljs.core/Keyword ~x)))
+  (bool-expr `(instance? corale.core/Keyword ~x)))
 
 (core/defmacro aget
   ([a i]
@@ -414,7 +419,7 @@
   ([x] `(- ~x)))
 
 (core/defmacro ^::ana/numeric unchecked-remainder-int
-  ([x n] `(core/mod ~x ~n)))
+  ([x n] `(corale.core/mod ~x ~n)))
 
 (core/defmacro ^::ana/numeric unchecked-subtract
   ([& xs] `(- ~@xs)))
@@ -548,6 +553,16 @@
 
 (core/defmacro ^::ana/numeric bit-set [x n]
   (core/list 'js* "(~{} | (1 << ~{}))" x n))
+
+;; internal
+(core/defmacro caching-hash [coll hash-fn hash-key]
+  (core/assert (clojure.core/symbol? hash-key) "hash-key is substituted twice")
+  `(let [h# ~hash-key]
+     (if-not (nil? h#)
+       h#
+       (let [h# (~hash-fn ~coll)]
+         (set! ~hash-key h#)
+         h#))))
 
 (core/defn- protocol-prefix [psym]
   (core/str (core/-> (core/str psym)
@@ -834,13 +849,6 @@
         {:current-symbol type-sym :suggested-symbol (js-base-type type-sym)}))
     `(do ~@(mapcat #(assign-impls env resolve type-sym type %) impl-map))))
 
-(comment
-  (macroexpand '(extend-type Symbol
-                  IFn
-                  (-invoke [sym coll]
-                    (get coll sym))))
-  )
-
 (core/defn- prepare-protocol-masks [env impls]
   (core/let [resolve  (partial resolve-var env)
              impl-map (->impl-map impls)
@@ -968,10 +976,10 @@
        (deftype* ~t ~fields ~pmasks
          ~(if (seq impls)
             `(extend-type ~t ~@(dt->et t impls fields))))
-       (set! (.-getBasis ~t) (fn [] '(sujure.core/array ~@fields)))
+       (set! (.-getBasis ~t) (fn [] (corale.core/array ~@(map (core/fn [x] (core/list 'quote x)) fields))))
        (set! (.-cljs$lang$type ~t) true)
        (set! (.-cljs$lang$ctorStr ~t) ~(core/str r))
-       (set! (.-cljs$lang$ctorPrWriter ~t) (fn [this# writer# opt#] (-write writer# ~(core/str r))))
+       (set! (.-cljs$lang$ctorPrWriter ~t) (fn [this# writer# opt#] (cljs.core/-write writer# ~(core/str r))))
 
        ~(build-positional-factory t r fields)
        ~t)))
@@ -1047,10 +1055,10 @@
                                 (. ~(first sig) ~slot ~@sig)
                                 (let [x# (if (nil? ~(first sig)) nil ~(first sig))
                                       m# (aget ~(fqn fname) (goog/typeOf x#))]
-                                  (if-not (nil? m#)
+                                  (core/if-not (nil? m#)
                                     (m# ~@sig)
                                     (let [m# (aget ~(fqn fname) "_")]
-                                      (if-not (nil? m#)
+                                      (core/if-not (nil? m#)
                                         (m# ~@sig)
                                         (throw
                                          (missing-protocol
@@ -1639,6 +1647,11 @@
 
 (. (var defn) (setMacro))
 
+(core/defmacro defn-
+  "same as defn, yielding non-public def"
+  [name & decls]
+  (list* `defn (with-meta name (assoc (meta name) :private true)) decls))
+
 (core/defmacro loop
   "Evaluates the exprs in a lexical context in which the symbols in
   the binding-forms are bound to their respective init-exprs or parts
@@ -1715,7 +1728,7 @@
                                                 ~isym     0
                                                 ~indexsym 0]
                                            (if (coercive-boolean (< ~isym ~countsym))
-                                             (let [~k (-nth ~chunksym ~isym)]
+                                             (let [~k (cljs.core/-nth ~chunksym ~isym)]
                                                ~subform-chunk
                                                ~@(core/when needrec [recform-chunk]))
                                              (when (< ~indexsym ~lengthsym)

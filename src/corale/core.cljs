@@ -8,7 +8,7 @@
 (corale.core/require-corale-macros)
 (corale.core/exclude-core)
 
-(declare instance?)
+(declare instance? Keyword)
 
 (defn ^boolean identical?
   "Tests if 2 arguments are the same object"
@@ -47,7 +47,7 @@
 (defn ^boolean object?
   "Returns true if x's constructor is Object"
   [x]
-  (if-not (nil? x)
+  (corale.core/if-not (nil? x)
     (identical? (.-constructor x) js/Object)
     false))
 
@@ -174,14 +174,42 @@
   "Invoke JavaScript object method via string. Needed when the
   string is not a valid unquoted property name."
   [obj s & args]
-  (.apply (aget obj s) obj (into-array args)))
+  (.apply (aget obj s) obj args))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;; core protocols ;;;;;;;;;;;;;
+
+(defprotocol IFn
+  "Protocol for adding the ability to invoke an object as a function.
+  For example, a vector can also be used to look up a value:
+  ([1 2 3 4] 1) => 2"
+  (-invoke
+    [this]
+    [this a]
+    [this a b]
+    [this a b c]
+    [this a b c d]
+    [this a b c d e]
+    [this a b c d e f]
+    [this a b c d e f g]
+    [this a b c d e f g h]
+    [this a b c d e f g h i]
+    [this a b c d e f g h i j]
+    [this a b c d e f g h i j k]
+    [this a b c d e f g h i j k l]
+    [this a b c d e f g h i j k l m]
+    [this a b c d e f g h i j k l m n]
+    [this a b c d e f g h i j k l m n o]
+    [this a b c d e f g h i j k l m n o p]
+    [this a b c d e f g h i j k l m n o p q]
+    [this a b c d e f g h i j k l m n o p q r]
+    [this a b c d e f g h i j k l m n o p q r s]
+    [this a b c d e f g h i j k l m n o p q r s t]
+    [this a b c d e f g h i j k l m n o p q r s t rest]))
 
 (defprotocol ICounted
   "Protocol for adding the ability to count a collection."
   (^number -count [coll]
-    "Calculates the count of coll. Used by corale.core/count."))
+   "Calculates the count of coll. Used by corale.core/count."))
 
 (defprotocol IEmptyableCollection
   "Protocol for creating an empty collection."
@@ -192,7 +220,7 @@
 (defprotocol ICollection
   "Protocol for adding to a collection."
   (^clj -conj [coll o]
-    "Returns a new collection of coll with o added to it. The new item
+   "Returns a new collection of coll with o added to it. The new item
      should be added to the most efficient place, e.g.
      (conj [1 2 3 4] 5) => [1 2 3 4 5]
      (conj '(2 3 4 5) 1) => '(1 2 3 4 5)"))
@@ -212,22 +240,22 @@
 (defprotocol IAssociative
   "Protocol for adding associativity to collections."
   (^boolean -contains-key? [coll k]
-    "Returns true if k is a key in coll.")
+   "Returns true if k is a key in coll.")
   #_(-entry-at [coll k])
   (^clj -assoc [coll k v]
-    "Returns a new collection of coll with a mapping from key k to
+   "Returns a new collection of coll with a mapping from key k to
      value v added to it."))
 
 (defprotocol IMap
   "Protocol for adding mapping functionality to collections."
   #_(-assoc-ex [coll k v])
   (^clj -dissoc [coll k]
-    "Returns a new collection of coll without the mapping for key k."))
+   "Returns a new collection of coll without the mapping for key k."))
 
 (defprotocol ISet
   "Protocol for adding set functionality to a collection."
   (^clj -disjoin [coll v]
-    "Returns a new collection of coll that does not contain v."))
+   "Returns a new collection of coll that does not contain v."))
 
 (defprotocol IStack
   "Protocol for collections to provide access to their items as stacks. The top
@@ -236,7 +264,7 @@
   (-peek [coll]
     "Returns the item from the top of the stack. Is used by corale.core/peek.")
   (^clj -pop [coll]
-    "Returns a new stack without the item on top of the stack. Is used
+   "Returns a new stack without the item on top of the stack. Is used
      by corale.core/pop."))
 
 (defprotocol IDeref
@@ -269,11 +297,6 @@
   (-hash [o]
     "Returns the hash code of o."))
 
-(defprotocol IArrayable
-  "Protocol for adding the ability to a type to be transformed into an array."
-  (-arr [o]
-    "Returns a array of o, or nil if o is empty."))
-
 (defprotocol ISequential
   "Marker interface indicating a persistent collection of sequential items")
 
@@ -284,9 +307,9 @@
   "Protocol for a collection which can represent their items
   in a sorted manner. "
   (^clj -sorted-seq [coll ascending?]
-    "Returns a sorted seq from coll in either ascending or descending order.")
+   "Returns a sorted seq from coll in either ascending or descending order.")
   (^clj -sorted-seq-from [coll k ascending?]
-    "Returns a sorted seq from coll in either ascending or descending order.
+   "Returns a sorted seq from coll in either ascending or descending order.
      If ascending is true, the result should contain all items which are > or >=
      than k. If ascending is false, the result should contain all items which
      are < or <= than k, e.g.
@@ -321,9 +344,15 @@
 (defprotocol INamed
   "Protocol for adding a name."
   (^string -name [x]
-    "Returns the name String of x.")
+   "Returns the name String of x.")
   (^string -namespace [x]
-    "Returns the namespace String of x."))
+   "Returns the namespace String of x."))
+
+
+(defprotocol IArrayable
+  "Protocol for adding the ability to a type to be transformed into an array."
+  (-arr [o]
+    "Returns a array of o, or nil if o is empty."))
 
 ;; Printing support
 
@@ -407,7 +436,7 @@
 
 ;;;;;;;;;;;;;;;;;;; symbols ;;;;;;;;;;;;;;;
 
-(declare = compare)
+(declare Symbol = compare)
 
 ;; Simple caching of string hashcode
 (def string-hash-cache (js-obj))
@@ -415,7 +444,7 @@
 
 ;;http://hg.openjdk.java.net/jdk7u/jdk7u6/jdk/file/8c2c5d63a17e/src/share/classes/java/lang/String.java
 (defn hash-string* [s]
-  (if-not (nil? s)
+  (corale.core/if-not (nil? s)
     (let [len (alength s)]
       (if (pos? len)
         (loop [i 0 hash 0]
@@ -494,7 +523,7 @@
 (defn ^boolean symbol?
   "Return true if x is a Symbol"
   [x]
-  (instance? cljs.core/Symbol x))
+  (instance? Symbol x))
 
 (defn- hash-symbol [sym]
   (hash-combine
@@ -505,7 +534,7 @@
   (cond
    (identical? (.-str a) (.-str b)) 0
    (and (not (.-ns a)) (.-ns b)) -1
-   (.-ns a) (if-not (.-ns b)
+   (.-ns a) (corale.core/if-not (.-ns b)
               1
               (let [nsc (garray/defaultCompare (.-ns a) (.-ns b))]
                 (if (== 0 nsc)
@@ -515,39 +544,63 @@
 
 (declare get)
 
-(extend-type Symbol
+(deftype Symbol [ns name str ^:mutable _hash _meta]
   Object
-  (toString [o] (.-str o))
+  (toString [_] str)
   (equiv [this other] (-equiv this other))
 
   IEquiv
-  (-equiv [o other]
+  (-equiv [_ other]
     (if (instance? Symbol other)
-      (identical? (.-str o) (.-str other))
+      (identical? str (.-str other))
       false))
 
   IFn
-  (-invoke
-    ([sym coll]
-     (get coll sym))
-    ([sym coll not-found]
-     (get coll sym not-found)))
+  (-invoke [sym coll]
+    (get coll sym))
+  (-invoke [sym coll not-found]
+    (get coll sym not-found))
 
   IHash
   (-hash [sym]
-    (let [h (.-_hash sym)]
-      (if-not (nil? h)
-        h
-        (let [h (hash-symbol sym)]
-          (set! (.-_hash sym) h)
-          h))))
+    (corale.core/caching-hash sym hash-symbol _hash))
 
   INamed
-  (-name [sym] (.-name sym))
-  (-namespace [sym] (.-ns sym))
+  (-name [_] name)
+  (-namespace [_] ns)
 
   IPrintWithWriter
-  (-pr-writer [o writer _] (-write writer (.-str o))))
+  (-pr-writer [o writer _] (-write writer str))
+
+  ;; Preserve Symbol cljs.core behavior
+  cljs.core/IEquiv
+  (cljs.core/-equiv [_ other]
+    (if (cljs.core/instance? cljs.core/Symbol other)
+      (cljs.core/identical? str (.-str other))
+      false))
+
+  cljs.core/IFn
+  (cljs.core/-invoke [sym coll]
+    (cljs.core/get coll sym))
+  (cljs.core/-invoke [sym coll not-found]
+    (cljs.core/get coll sym not-found))
+
+  cljs.core/IMeta
+  (cljs.core/-meta [_] _meta)
+
+  cljs.core/IWithMeta
+  (cljs.core/-with-meta [_ new-meta] (cljs.core/Symbol. ns name str _hash new-meta))
+
+  cljs.core/IHash
+  (cljs.core/-hash [sym]
+    (cljs.core/caching-hash sym hash-symbol _hash))
+
+  cljs.core/INamed
+  (cljs.core/-name [_] name)
+  (cljs.core/-namespace [_] ns)
+
+  cljs.core/IPrintWithWriter
+  (cljs.core/-pr-writer [o writer _] (cljs.core/-write writer str)))
 
 (defn symbol
   "Returns a Symbol with the given namespace and name."
@@ -560,7 +613,7 @@
          (symbol (.substring name 0 idx)
                  (.substring name (inc idx) (. name -length)))))))
   ([ns name]
-   (let [sym-str (if-not (nil? ns)
+   (let [sym-str (corale.core/if-not (nil? ns)
                    (str ns "/" name)
                    name)]
      (Symbol. ns name sym-str nil nil))))
@@ -654,7 +707,7 @@
    See http://clojure.org/data_structures#hash for full algorithms."
   [coll]
   (loop [n 0 hash-code 1 coll (seq coll)]
-    (if-not (nil? coll)
+    (corale.core/if-not (nil? coll)
       (recur (inc n) (bit-or (+ (imul 31 hash-code) (hash (first coll))) 0)
         (next coll))
       (mix-collection-hash hash-code n))))
@@ -670,7 +723,7 @@
    See http://clojure.org/data_structures#hash for full algorithms."
   [coll]
   (loop [n 0 hash-code 0 coll (seq coll)]
-    (if-not (nil? coll)
+    (corale.core/if-not (nil? coll)
       (recur (inc n) (bit-or (+ hash-code (hash (first coll))) 0) (next coll))
       (mix-collection-hash hash-code n))))
 
@@ -880,7 +933,7 @@
   "Returns the number of items in the collection. (count nil) returns
   0.  Also works on strings, arrays, and Maps"
   [coll]
-  (if-not (nil? coll)
+  (corale.core/if-not (nil? coll)
     (cond
       (implements? ICounted coll)
       (-count ^not-native coll)
@@ -929,32 +982,32 @@
       (throw (js/Error. (str "nth not supported on this type "
                           (type->str (type coll)))))))
   ([coll n not-found]
-    (cond
-      (not (number? n))
-      (throw (js/Error. "Index argument to nth must be a number."))
+   (cond
+     (not (number? n))
+     (throw (js/Error. "Index argument to nth must be a number."))
 
-      (nil? coll)
-      not-found
+     (nil? coll)
+     not-found
 
-      (implements? IIndexed coll)
-      (-nth ^not-native coll n not-found)
+     (implements? IIndexed coll)
+     (-nth ^not-native coll n not-found)
 
-      (array? coll)
-      (if (and (>= n 0) (< n (.-length coll)))
-        (aget coll n)
-        not-found)
+     (array? coll)
+     (if (and (>= n 0) (< n (.-length coll)))
+       (aget coll n)
+       not-found)
 
-      (string? coll)
-      (if (and (>= n 0) (< n (.-length coll)))
-        (.charAt coll n)
-        not-found)
+     (string? coll)
+     (if (and (>= n 0) (< n (.-length coll)))
+       (.charAt coll n)
+       not-found)
 
-      (native-satisfies? IIndexed coll)
-      (-nth coll n)
+     (native-satisfies? IIndexed coll)
+     (-nth coll n)
 
-      :else
-      (throw (js/Error. (str "nth not supported on this type "
-                             (type->str (type coll))))))))
+     :else
+     (throw (js/Error. (str "nth not supported on this type "
+                            (type->str (type coll))))))))
 
 (defn get
   "Returns the value mapped to key, not-found or nil if key not present."
@@ -963,10 +1016,6 @@
       (cond
         (implements? ILookup o)
         (-lookup ^not-native o k)
-
-        ;; Preserve Symbols and Keywords behavior event when overriding their IFn implementation
-        (implements? cljs.core/ILookup o)
-        (cljs.core/-lookup ^not-native o k)
 
         (array? o)
         (when (and (some? k) (< k (.-length o)))
@@ -986,14 +1035,10 @@
 
         :else nil)))
   ([o k not-found]
-    (if-not (nil? o)
+    (corale.core/if-not (nil? o)
       (cond
         (implements? ILookup o)
         (-lookup ^not-native o k not-found)
-
-        ;; Preserve Symbols and Keywords behavior event when overriding their IFn implementation
-        (implements? cljs.core/ILookup o)
-        (cljs.core/-lookup ^not-native o k not-found)
 
         (array? o)
         (if (and (some? k) (>= k 0) (< k (.-length o)))
@@ -1987,7 +2032,7 @@
   (cond
     (identical? (.-fqn a) (.-fqn b)) 0
     (and (not (.-ns a)) (.-ns b)) -1
-    (.-ns a) (if-not (.-ns b)
+    (.-ns a) (corale.core/if-not (.-ns b)
                1
                (let [nsc (garray/defaultCompare (.-ns a) (.-ns b))]
                  (if (== 0 nsc)
@@ -1995,40 +2040,57 @@
                    nsc)))
     :default (garray/defaultCompare (.-name a) (.-name b))))
 
-(extend-type Keyword
+(deftype Keyword [ns name fqn ^:mutable _hash]
   Object
-  (toString [o] (str ":" (.-fqn o)))
+  (toString [_] (str ":" fqn))
   (equiv [this other]
     (-equiv this other))
-
+  
   IEquiv
-  (-equiv [o other]
+  (-equiv [_ other]
     (if (instance? Keyword other)
-      (identical? (.-fqn o) (.-fqn other))
+      (identical? fqn (.-fqn other))
       false))
-
   IFn
-  (-invoke
-    ([kw coll]
-     (get coll kw))
-    ([kw coll not-found]
-     (get coll kw not-found)))
+  (-invoke [kw coll]
+    (get coll kw))
+  (-invoke [kw coll not-found]
+    (get coll kw not-found))
 
   IHash
   (-hash [this]
-    (let [h (.-_hash this)]
-      (if-not (nil? h)
-        h
-        (let [h (hash-symbol this)]
-          (set! (.-_hash this) h)
-          h))))
+    (corale.core/caching-hash this hash-keyword _hash))
 
   INamed
-  (-name [o] (.-name o))
-  (-namespace [o] (.-ns o))
+  (-name [_] name)
+  (-namespace [_] ns)
 
   IPrintWithWriter
-  (-pr-writer [o writer _] (-write writer (str ":" (.-fqn o)))))
+  (-pr-writer [o writer _] (-write writer (str ":" fqn)))
+
+  ;; Preserve  Keyword cljs.core behavior
+
+  cljs.core/IEquiv
+  (cljs.core/-equiv [_ other]
+    (if (cljs.core/instance? cljs.core/Keyword other)
+      (cljs.core/identical? fqn (.-fqn other))
+      false))
+  cljs.core/IFn
+  (cljs.core/-invoke [kw coll]
+    (get coll kw))
+  (cljs.core/-invoke [kw coll not-found]
+    (get coll kw not-found))
+
+  cljs.core/IHash
+  (cljs.core/-hash [this]
+    (cljs.core/caching-hash this hash-keyword _hash))
+
+  cljs.core/INamed
+  (cljs.core/-name [_] name)
+  (cljs.core/-namespace [_] ns)
+
+  cljs.core/IPrintWithWriter
+  (cljs.core/-pr-writer [o writer _] (cljs.core/-write writer (str ":" fqn))))
 
 (defn ^boolean keyword?
   "Return true if x is a Keyword"
@@ -2285,6 +2347,12 @@
        (.apply f f arglist)))))
 (set! cljs.core/*unchecked-if* false)
 
+(defn ^boolean not=
+  "Same as (not (= obj1 obj2))"
+  ([x] false)
+  ([x y] (not (= x y)))
+  ([x y & more]
+   (not (apply = x y more))))
 
 ;;;;;;;;;
 
