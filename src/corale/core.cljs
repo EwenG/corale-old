@@ -13,7 +13,7 @@
   [x]
   (corale.core/truth_ x))
 
-(declare instance? Keyword)
+(declare instance?)
 
 (defn ^boolean identical?
   "Tests if 2 arguments are the same object"
@@ -332,6 +332,13 @@
   (-comparator [coll]
     "Returns the comparator for coll."))
 
+(defprotocol IWriter
+  "Protocol for writing. Currently only implemented by StringBufferWriter."
+  (-write [writer s]
+    "Writes s with writer and returns the result.")
+  (-flush [writer]
+    "Flush writer."))
+
 (defprotocol IPrintWithWriter
   "The old IPrintable protocol's implementation consisted of building a giant
    list of strings to concatenate.  This involved lots of concat calls,
@@ -346,20 +353,17 @@
    "Returns a negative number, zero, or a positive number when x is logically
      'less than', 'equal to', or 'greater than' y."))
 
-(defprotocol INamed
-  "Protocol for adding a name."
-  (^string -name [x]
-   "Returns the name String of x.")
-  (^string -namespace [x]
-   "Returns the namespace String of x."))
-
-
 (defprotocol IArrayable
   "Protocol for adding the ability to a type to be transformed into an array."
   (-arr [o]
     "Returns a array of o, or nil if o is empty."))
 
 ;; Printing support
+
+(deftype StringBufferWriter [sb]
+  IWriter
+  (-write [_ s] (.append sb s))
+  (-flush [_] nil))
 
 (defn pr-str*
   "Support so that collections can implement toString without
@@ -434,9 +438,7 @@
              h1)]
     (m3-fmix h1 (imul 2 (alength in)))))
 
-;;;;;;;;;;;;;;;;;;; symbols ;;;;;;;;;;;;;;;
-
-(declare Symbol = compare)
+(declare = compare)
 
 ;; Simple caching of string hashcode
 (def string-hash-cache (js-obj))
@@ -520,77 +522,7 @@
   [c x]
   (corale.core/instance? c x))
 
-(defn ^boolean symbol?
-  "Return true if x is a Symbol"
-  [x]
-  (instance? Symbol x))
-
-(defn- hash-symbol [sym]
-  (hash-combine
-    (m3-hash-unencoded-chars (.-name sym))
-    (hash-string (.-ns sym))))
-
-(defn- compare-symbols [a b]
-  (cond
-   (identical? (.-str a) (.-str b)) 0
-   (and (not (.-ns a)) (.-ns b)) -1
-   (.-ns a) (corale.core/if-not (.-ns b)
-              1
-              (let [nsc (garray/defaultCompare (.-ns a) (.-ns b))]
-                (if (== 0 nsc)
-                  (garray/defaultCompare (.-name a) (.-name b))
-                  nsc)))
-   :default (garray/defaultCompare (.-name a) (.-name b))))
-
 (declare get)
-
-(deftype Symbol [ns name str ^:mutable _hash _meta]
-  Object
-  (toString [_] str)
-  (equiv [this other] (-equiv this other))
-
-  IEquiv
-  (-equiv [_ other]
-    (if (instance? Symbol other)
-      (identical? str (.-str other))
-      false))
-
-  IFn
-  (-invoke [sym coll]
-    (get coll sym))
-  (-invoke [sym coll not-found]
-    (get coll sym not-found))
-
-  IHash
-  (-hash [sym]
-    (corale.core/caching-hash sym hash-symbol _hash))
-
-  INamed
-  (-name [_] name)
-  (-namespace [_] ns)
-
-  IPrintWithWriter
-  (-pr-writer [o writer _] (-write writer str))
-
-  ;; printing at the REPL calls cljs.core function
-  cljs.core/IPrintWithWriter
-  (cljs.core/-pr-writer [o writer _] (-write writer str)))
-
-(defn symbol
-  "Returns a Symbol with the given namespace and name."
-  ([name]
-   (if (symbol? name)
-     name
-     (let [idx (.indexOf name "/")]
-       (if (< idx 1)
-         (symbol nil name)
-         (symbol (.substring name 0 idx)
-                 (.substring name (inc idx) (. name -length)))))))
-  ([ns name]
-   (let [sym-str (corale.core/if-not (nil? ns)
-                   (str ns "/" name)
-                   name)]
-     (Symbol. ns name sym-str nil nil))))
 
 ;;;;;;;;;;;;;;;;;;; fundamentals ;;;;;;;;;;;;;;;
 
@@ -2001,134 +1933,6 @@
         (.unshift a x)
         a)))
 
-(defn hash-keyword [k]
-  (int (+ (hash-symbol k) 0x9e3779b9)))
-
-(defn- compare-keywords [a b]
-  (cond
-    (identical? (.-fqn a) (.-fqn b)) 0
-    (and (not (.-ns a)) (.-ns b)) -1
-    (.-ns a) (corale.core/if-not (.-ns b)
-               1
-               (let [nsc (garray/defaultCompare (.-ns a) (.-ns b))]
-                 (if (== 0 nsc)
-                   (garray/defaultCompare (.-name a) (.-name b))
-                   nsc)))
-    :default (garray/defaultCompare (.-name a) (.-name b))))
-
-(deftype Keyword [ns name fqn ^:mutable _hash]
-  Object
-  (toString [_] (str ":" fqn))
-  (equiv [this other]
-    (-equiv this other))
-  
-  IEquiv
-  (-equiv [_ other]
-    (if (instance? Keyword other)
-      (identical? fqn (.-fqn other))
-      false))
-  IFn
-  (-invoke [kw coll]
-    (get coll kw))
-  (-invoke [kw coll not-found]
-    (get coll kw not-found))
-
-  IHash
-  (-hash [this]
-    (corale.core/caching-hash this hash-keyword _hash))
-
-  INamed
-  (-name [_] name)
-  (-namespace [_] ns)
-
-  IPrintWithWriter
-  (-pr-writer [o writer _] (-write writer (str ":" fqn)))
-
-  ;; printing at the REPL calls cljs.core function
-  cljs.core/IPrintWithWriter
-  (cljs.core/-pr-writer [o writer _] (-write writer (str ":" fqn))))
-
-(defn ^boolean keyword?
-  "Return true if x is a Keyword"
-  [x]
-  (instance? Keyword x))
-
-(defn ^boolean keyword-identical?
-  "Efficient test to determine that two keywords are identical."
-  [x y]
-  (if (identical? x y)
-    true
-    (if (and (keyword? x) (keyword? y))
-      (identical? (.-fqn x) (.-fqn y))
-      false)))
-
-(defn ^boolean symbol-identical?
-  "Efficient test to determine that two symbols are identical."
-  [x y]
-  (if (identical? x y)
-    true
-    (if (and (symbol? x) (symbol? y))
-      (identical? (.-str x) (.-str y))
-      false)))
-
-(defn namespace
-  "Returns the namespace String of a symbol or keyword, or nil if not present."
-  [x]
-  (if (corale.core/implements? INamed x)
-    (-namespace ^not-native x)
-    (throw (js/Error. (str "Doesn't support namespace: " x)))))
-
-(defn ^boolean ident?
-  "Return true if x is a symbol or keyword"
-  [x] (or (keyword? x) (symbol? x)))
-
-(defn ^boolean simple-ident?
-  "Return true if x is a symbol or keyword without a namespace"
-  [x] (and (ident? x) (nil? (namespace x))))
-
-(defn ^boolean qualified-ident?
-  "Return true if x is a symbol or keyword with a namespace"
-  [x] (and (ident? x) (namespace x) true))
-
-(defn ^boolean simple-symbol?
-  "Return true if x is a symbol without a namespace"
-  [x] (and (symbol? x) (nil? (namespace x))))
-
-(defn ^boolean qualified-symbol?
-  "Return true if x is a symbol with a namespace"
-  [x] (and (symbol? x) (namespace x) true))
-
-(defn ^boolean simple-keyword?
-  "Return true if x is a keyword without a namespace"
-  [x] (and (keyword? x) (nil? (namespace x))))
-
-(defn ^boolean qualified-keyword?
-  "Return true if x is a keyword with a namespace"
-  [x] (and (keyword? x) (namespace x) true))
-
-(defn keyword
-  "Returns a Keyword with the given namespace and name.  Do not use :
-  in the keyword strings, it will be added automatically."
-  ([name] (cond
-            (keyword? name) name
-            (symbol? name) (Keyword.
-                             (corale.core/namespace name)
-                             (corale.core/name name) (.-str name) nil)
-            (string? name) (let [parts (.split name "/")]
-                             (if (== (alength parts) 2)
-                               (Keyword. (aget parts 0) (aget parts 1) name nil)
-                               (Keyword. nil (aget parts 0) name nil)))))
-  ([ns name]
-   (let [ns   (cond
-                (keyword? ns) (corale.core/name ns)
-                (symbol? ns)  (corale.core/name ns)
-                :else ns)
-         name (cond
-                (keyword? name) (corale.core/name name)
-                (symbol? name) (corale.core/name name)
-                :else name)]
-     (Keyword. ns name (str (when ns (str ns "/")) name) nil))))
-
 (defn to-array
   "Naive impl of to-array as a start."
   [s]
@@ -2321,8 +2125,6 @@
           (aget arr (inc i))
           (recur (+ i 2)))))))
 
-;; Symbol is imported from cljs.core anyway
-
 ;;;;;;;;;;;;;;;;
 
 ;; when-let
@@ -2337,3 +2139,8 @@
 ;; fast-path-protocols
 ;; revert compiler emit :meta, throw error
 ;; constant table
+
+
+;;;; printing at the REPL calls cljs.core function
+;;  cljs.core/IPrintWithWriter
+;;  (cljs.core/-pr-writer [o writer _] (-write writer str))

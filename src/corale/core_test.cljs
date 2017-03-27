@@ -29,7 +29,7 @@
 
 (object? #js {:e "e"})
 (let [a #js [1]]
-  (aset a 3 4)
+  (aset a "r" 4)
   (object? a))
 
 (string? "rr")
@@ -70,21 +70,38 @@
 
 (js-invoke "ed" "split" "")
 
-(instance? Symbol 'r)
-(instance? Keyword :f)
-(instance? Keyword "e")
-
-(symbol? 'e)
-(symbol? 3)
-
-(symbol "e")
-#_(symbol "e" "g")
+;; (instance?)
 
 #_(arr #js {:e "e"})
 
-;;;;;;;;;;;
+;;;;
 
-;; emit-apply-to
-;; emit-variadic-fn-method
-;; emit* :fn , (when variadic ...)
-;; emit :invoke
+#_(defn ff
+    ([rr]
+     (.log js/console rr))
+    ([a [b c] {:strs [aa bb]} & rr]
+       (.log js/console a b c)
+       (.log js/console aa bb)
+       (.log js/console rr)
+       nil))
+
+  #_(ff 3 4 5)
+  #_(ff "a" #js ["fc" 3] #js {:aa "e" :bb 4} "r" 44)
+
+(comment
+
+  (defn ff
+    ([& rr]
+     (.log js/console rr))
+    #_([a [b c] {:strs [aa bb]} & rr]
+       (.log js/console a b c)
+       (.log js/console aa bb)
+       (.log js/console rr)
+       nil))
+
+  #_(ff 3 4 5)
+  #_(ff "a" #js ["fc" 3] #js {:aa "e" :bb 4} "r" 44))
+
+
+
+

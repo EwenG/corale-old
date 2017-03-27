@@ -1,5 +1,5 @@
 (ns corale.core
-  (:refer-clojure :exclude [identical? nil? number? some? string? dotimes instance? symbol?
+  (:refer-clojure :exclude [identical? nil? number? some? string? dotimes instance?
                             make-array implements? satisfies?
                             and or if-not
                             alength aclone
@@ -18,13 +18,12 @@
                             bit-flip bit-test bit-shift-left bit-shift-right
                             bit-shift-right-zero-fill unsigned-bit-shift-right bit-set
                             == pos? zero? neg?
-                            str keyword?
-                            fn defn defn- destructure let aset aget doseq loop])
+                            str fn defn defn- destructure let aset aget doseq loop])
   (:require [cljs.analyzer :as ana]
             [cljs.compiler :as comp]
             [cljs.env :as env]))
 
-(load "compiler")
+#_(load "compiler")
 (alias 'core 'clojure.core)
 
 (core/defmacro exclude-core []
@@ -41,8 +40,8 @@
                     ~'into-array ~'reduce
                     ~'js-invoke
                     ~'IFn ~'ICollection ~'ILookup ~'IEquiv ~'-invoke ~'-lookup ~'-equiv
-                    ~'IPrintWithWriter
-                    ~'pr-str* ~'-pr-writer
+                    ~'IPrintWithWriter ~'IWriter ~'StringBufferWriter ~'->StringBufferWriter
+                    ~'pr-str* ~'-pr-writer ~'-write ~'-flush
                     ~'int-rotate-left ~'imul ~'m3-seed ~'m3-C1 ~'m3-C2 ~'m3-mix-K1 ~'m3-mix-H1
                     ~'m3-fmix ~'m3-hash-int ~'m3-hash-unencoded-chars
                     ~'string-hash-cache ~'string-hash-cache-count
@@ -136,17 +135,15 @@
                ~'into-array ~'reduce
                ~'js-invoke
                ~'IFn ~'ICollection ~'ILookup ~'IEquiv ~'-lookup ~'-equiv ~'-invoke
-               ~'IPrintWithWriter
-               ~'pr-str* ~'-pr-writer
+               ~'IPrintWithWriter ~'IWriter ~'StringBufferWriter ~'->StringBufferWriter
+               ~'pr-str* ~'-pr-writer ~'-write ~'-flush
                ~'int-rotate-left
                ~'= ~'compare
                ~'hash ~'IHash ~'-hash
-               ~'Symbol ~'->Symbol ~'symbol? ~'compare-symbols
                ~'deftype ~'defprotocol
                ~'extend-type
                ~'get
                ~'this-as ~'js-this
-               ~'INamed ~'-name ~'-namespace ~'symbol
                ~'first
                ~'ICounted ~'-count ~'IComparable ~'-compare
                ~'Inst ~'inst-ms* ~'inst-ms ~'inst?
@@ -194,11 +191,6 @@
                ~'bit-shift-right-zero-fill ~'unsigned-bit-shift-right ~'bit-set ~'bit-count
                ~'== ~'pos? ~'zero? ~'neg?
                ~'str ~'subs ~'reverse
-               ~'Keyword ~'->Keyword ~'hash-keyword ~'compare-keywords
-               ~'keyword? ~'keyword-identical? ~'symbol-identical? ~'namespace ~'name
-               ~'ident? ~'simple-ident? ~'qualified-ident? ~'simple-symbol?
-               ~'qualified-symbol? ~'simple-keyword? ~'qualified-keyword?
-               ~'keyword
                ~'to-array ~'to-array-2d
                ~'int-array ~'long-array ~'double-array ~'object-array
                ~'concat
@@ -217,7 +209,7 @@
                    defprotocol this-as + false? inc true? zero?
                    < > + - == / * int bit-xor bit-or bit-shift-left
                    unsigned-bit-shift-right bit-and js-mod bit-shift-right
-                   str dec >= pos? neg? keyword? doseq unchecked-inc
+                   str dec >= pos? neg? doseq unchecked-inc
                    coercive-boolean if-not defn-]]))
              nil nil)
   nil)
@@ -231,7 +223,7 @@
                  ISeqable ISequential IList IRecord IReversible ISorted IPrintWithWriter IWriter
                  IPrintWithWriter IPending IWatchable IEditableCollection ITransientCollection
                  ITransientAssociative ITransientMap ITransientVector ITransientSet
-                 IMultiFn IChunkedSeq IChunkedNext IComparable INamed ICloneable IAtom
+                 IMultiFn IChunkedSeq IChunkedNext IComparable ICloneable IAtom
                  IReset ISwap])
           (iterate (core/fn [[p b]]
                      (if (core/== 2147483648 b)
@@ -351,12 +343,6 @@
 
 (core/defmacro number? [x]
   (bool-expr (core/list 'js* "typeof ~{} === 'number'" x)))
-
-(core/defmacro symbol? [x]
-  (bool-expr `(instance? corale.core/Symbol ~x)))
-
-(core/defmacro keyword? [x]
-  (bool-expr `(instance? corale.core/Keyword ~x)))
 
 (core/defmacro aget
   ([a i]
@@ -984,7 +970,7 @@
        (set! (.-getBasis ~t) (fn [] (corale.core/array ~@(map (core/fn [x] (core/list 'quote x)) fields))))
        (set! (.-cljs$lang$type ~t) true)
        (set! (.-cljs$lang$ctorStr ~t) ~(core/str r))
-       (set! (.-cljs$lang$ctorPrWriter ~t) (fn [this# writer# opt#] (cljs.core/-write writer# ~(core/str r))))
+       (set! (.-cljs$lang$ctorPrWriter ~t) (fn [this# writer# opt#] (-write writer# ~(core/str r))))
 
        ~(build-positional-factory t r fields)
        ~t)))
@@ -1502,7 +1488,7 @@
                c-1   (core/dec (count sig))
                meta  (assoc meta
                             :top-fn
-                            {:variadic true
+                            {:variadic false
                              :max-fixed-arity c-1
                              :method-params [sig]
                              :arglists (core/list arglist)
@@ -1553,7 +1539,7 @@
                                 [(core/- (count (first (filter varsig? arglists))) 2)]))
                meta     (assoc meta
                                :top-fn
-                               {:variadic variadic
+                               {:variadic false
                                 :max-fixed-arity maxfa
                                 :method-params sigs
                                 :arglists arglists
