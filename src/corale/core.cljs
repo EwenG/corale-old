@@ -8,12 +8,24 @@
 (corale.core/require-corale-macros)
 (corale.core/exclude-core)
 
+(defn truth_
+  "Internal - do not use!"
+  [x]
+  (corale.core/truth_ x))
+
 (declare instance? Keyword)
 
 (defn ^boolean identical?
   "Tests if 2 arguments are the same object"
   [x y]
   (corale.core/identical? x y))
+
+(defn- pr-opts []
+  #js {:flush-on-newline *flush-on-newline*
+       :readably *print-readably*
+       :meta *print-meta*
+       :dup *print-dup*
+       :print-length *print-length*})
 
 (defn ^boolean nil?
   "Returns true if x is nil, false otherwise."
@@ -320,13 +332,6 @@
   (-comparator [coll]
     "Returns the comparator for coll."))
 
-(defprotocol IWriter
-  "Protocol for writing. Currently only implemented by StringBufferWriter."
-  (-write [writer s]
-    "Writes s with writer and returns the result.")
-  (-flush [writer]
-    "Flush writer."))
-
 (defprotocol IPrintWithWriter
   "The old IPrintable protocol's implementation consisted of building a giant
    list of strings to concatenate.  This involved lots of concat calls,
@@ -355,11 +360,6 @@
     "Returns a array of o, or nil if o is empty."))
 
 ;; Printing support
-
-(deftype StringBufferWriter [sb]
-  IWriter
-  (-write [_ s] (.append sb s))
-  (-flush [_] nil))
 
 (defn pr-str*
   "Support so that collections can implement toString without
@@ -476,7 +476,7 @@
    consistent with =."
   [o]
   (cond
-    (implements? IHash o)
+    (corale.core/implements? IHash o)
     (-hash ^not-native o)
 
     (number? o)
@@ -572,35 +572,9 @@
   IPrintWithWriter
   (-pr-writer [o writer _] (-write writer str))
 
-  ;; Preserve Symbol cljs.core behavior
-  cljs.core/IEquiv
-  (cljs.core/-equiv [_ other]
-    (if (cljs.core/instance? cljs.core/Symbol other)
-      (cljs.core/identical? str (.-str other))
-      false))
-
-  cljs.core/IFn
-  (cljs.core/-invoke [sym coll]
-    (cljs.core/get coll sym))
-  (cljs.core/-invoke [sym coll not-found]
-    (cljs.core/get coll sym not-found))
-
-  cljs.core/IMeta
-  (cljs.core/-meta [_] _meta)
-
-  cljs.core/IWithMeta
-  (cljs.core/-with-meta [_ new-meta] (cljs.core/Symbol. ns name str _hash new-meta))
-
-  cljs.core/IHash
-  (cljs.core/-hash [sym]
-    (cljs.core/caching-hash sym hash-symbol _hash))
-
-  cljs.core/INamed
-  (cljs.core/-name [_] name)
-  (cljs.core/-namespace [_] ns)
-
+  ;; printing at the REPL calls cljs.core function
   cljs.core/IPrintWithWriter
-  (cljs.core/-pr-writer [o writer _] (cljs.core/-write writer str)))
+  (cljs.core/-pr-writer [o writer _] (-write writer str)))
 
 (defn symbol
   "Returns a Symbol with the given namespace and name."
@@ -627,7 +601,7 @@
   [coll]
   (when-not (nil? coll)
     (cond
-      (implements? IArrayable coll)
+      (corale.core/implements? IArrayable coll)
       (-arr ^not-native coll)
 
       (array? coll)
@@ -769,7 +743,7 @@
 (defn ^boolean inst?
   "Return true if x satisfies Inst"
   [x]
-  (satisfies? Inst x))
+  (corale.core/satisfies? Inst x))
 
 (extend-type number
   IEquiv
@@ -830,7 +804,7 @@
            (if (< n cnt)
              (let [nval (f val (aget arr n))]
                (if (reduced? nval)
-                 @nval
+                 (deref nval)
                  (recur nval (inc n))))
              val)))))
   ([arr f val]
@@ -839,7 +813,7 @@
          (if (< n cnt)
            (let [nval (f val (aget arr n))]
              (if (reduced? nval)
-               @nval
+               (deref nval)
                (recur nval (inc n))))
            val))))
   ([arr f val idx]
@@ -848,7 +822,7 @@
          (if (< n cnt)
            (let [nval (f val (aget arr n))]
              (if (reduced? nval)
-               @nval
+               (deref nval)
                (recur nval (inc n))))
            val)))))
 
@@ -856,11 +830,11 @@
 
 (defn ^boolean counted?
   "Returns true if coll implements count in constant time"
-  [x] (satisfies? ICounted x))
+  [x] (corale.core/satisfies? ICounted x))
 
 (defn ^boolean indexed?
   "Returns true if coll implements nth in constant time"
-  [x] (satisfies? IIndexed x))
+  [x] (corale.core/satisfies? IIndexed x))
 
 (defn second
   [coll]
@@ -935,7 +909,7 @@
   [coll]
   (corale.core/if-not (nil? coll)
     (cond
-      (implements? ICounted coll)
+      (corale.core/implements? ICounted coll)
       (-count ^not-native coll)
 
       (array? coll)
@@ -944,7 +918,7 @@
       (string? coll)
       (alength coll)
 
-      (implements? IArrayable coll)
+      (corale.core/implements? IArrayable coll)
       (alength (-arr coll))
 
       :else (-count coll))
@@ -962,7 +936,7 @@
       (nil? coll)
       coll
 
-      (implements? IIndexed coll)
+      (corale.core/implements? IIndexed coll)
       (-nth ^not-native coll n)
 
       (array? coll)
@@ -989,7 +963,7 @@
      (nil? coll)
      not-found
 
-     (implements? IIndexed coll)
+     (corale.core/implements? IIndexed coll)
      (-nth ^not-native coll n not-found)
 
      (array? coll)
@@ -1012,9 +986,9 @@
 (defn get
   "Returns the value mapped to key, not-found or nil if key not present."
   ([o k]
-    (when-not (nil? o)
+   (when-not (nil? o)
       (cond
-        (implements? ILookup o)
+        (corale.core/implements? ILookup o)
         (-lookup ^not-native o k)
 
         (array? o)
@@ -1037,7 +1011,7 @@
   ([o k not-found]
     (corale.core/if-not (nil? o)
       (cond
-        (implements? ILookup o)
+        (corale.core/implements? ILookup o)
         (-lookup ^not-native o k not-found)
 
         (array? o)
@@ -1132,7 +1106,7 @@
 (defn ^boolean fn?
   "Return true if f is a JavaScript function or satisfies the Fn protocol."
   [f]
-  (or ^boolean (goog/isFunction f) (satisfies? Fn f)))
+  (or ^boolean (goog/isFunction f) (corale.core/satisfies? Fn f)))
 
 (defn peek
   "For a queue, same as first, for an array, same as last. 
@@ -1179,42 +1153,42 @@
   [x]
   (if (nil? x)
     false
-    (satisfies? ICollection x)))
+    (corale.core/satisfies? ICollection x)))
 
 (defn ^boolean set?
   "Returns true if x satisfies ISet"
   [x]
   (if (nil? x)
     false
-    (satisfies? ISet x)))
+    (corale.core/satisfies? ISet x)))
 
 (defn ^boolean associative?
  "Returns true if coll implements Associative"
-  [x] (satisfies? IAssociative x))
+  [x] (corale.core/satisfies? IAssociative x))
 
 (defn ^boolean sequential?
   "Returns true if coll satisfies ISequential"
-  [x] (satisfies? ISequential x))
+  [x] (corale.core/satisfies? ISequential x))
 
 (defn ^boolean sorted?
   "Returns true if coll satisfies ISorted"
-  [x] (satisfies? ISorted x))
+  [x] (corale.core/satisfies? ISorted x))
 
 (defn ^boolean reduceable?
   "Returns true if coll satisfies IReduce"
-  [x] (satisfies? IReduce x))
+  [x] (corale.core/satisfies? IReduce x))
 
 (defn ^boolean map?
   "Return true if x satisfies IMap"
   [x]
   (if (nil? x)
     false
-    (satisfies? IMap x)))
+    (corale.core/satisfies? IMap x)))
 
 (defn ^boolean record?
   "Return true if x satisfies IRecord"
   [x]
-  (satisfies? IRecord x))
+  (corale.core/satisfies? IRecord x))
 
 ;;;;;;;;;;;;;;;;;;;; js primitives ;;;;;;;;;;;;
 (defn js-obj
@@ -1262,7 +1236,7 @@
   "Return true if the arr function is supported for s"
   [s]
   (or
-   (satisfies? IArrayable s)
+   (corale.core/satisfies? IArrayable s)
    (array? s)
    (object? s)
    (string? s)))
@@ -1278,7 +1252,7 @@
 (defn ^boolean ifn?
   "Returns true if f returns true for fn? or satisfies IFn."
   [f]
-  (or (fn? f) (satisfies? IFn f)))
+  (or (fn? f) (corale.core/satisfies? IFn f)))
 
 (defn ^boolean integer?
   "Returns true if n is a JavaScript number with no decimal part."
@@ -1377,6 +1351,8 @@
              (contains? coll k))
     (array k (get coll k))))
 
+(declare set)
+
 (defn ^boolean distinct?
   "Returns true if no two of the arguments are ="
   ([x] true)
@@ -1415,7 +1391,7 @@
 
     (array? x) (compare-indexed x y)
 
-    (satisfies? IComparable x)
+    (corale.core/satisfies? IComparable x)
     (-compare x y)
 
     :else
@@ -1505,7 +1481,7 @@
   items, returns val and f is not called."
   ([f coll]
      (cond
-       (implements? IReduce coll)
+       (corale.core/implements? IReduce coll)
        (-reduce ^not-native coll f)
 
        (nil? coll)
@@ -1524,7 +1500,7 @@
        (array-reduce (arr coll) f)))
   ([f val coll]
      (cond
-       (implements? IReduce coll)
+       (corale.core/implements? IReduce coll)
        (-reduce ^not-native coll f val)
 
        (nil? coll)
@@ -1548,7 +1524,7 @@
       (if (< i l)
         (let [init (f init i (aget coll i))]
           (if (reduced? init)
-            @init
+            (deref init)
             (recur (inc i) init)))
         init))))
 
@@ -1560,7 +1536,7 @@
         (let [k (aget coll-keys i)
               init (f init k (get coll k))]
           (if (reduced? init)
-            @init
+            (deref init)
             (recur (inc i) init)))
         init))))
 
@@ -2068,29 +2044,9 @@
   IPrintWithWriter
   (-pr-writer [o writer _] (-write writer (str ":" fqn)))
 
-  ;; Preserve  Keyword cljs.core behavior
-
-  cljs.core/IEquiv
-  (cljs.core/-equiv [_ other]
-    (if (cljs.core/instance? cljs.core/Keyword other)
-      (cljs.core/identical? fqn (.-fqn other))
-      false))
-  cljs.core/IFn
-  (cljs.core/-invoke [kw coll]
-    (get coll kw))
-  (cljs.core/-invoke [kw coll not-found]
-    (get coll kw not-found))
-
-  cljs.core/IHash
-  (cljs.core/-hash [this]
-    (cljs.core/caching-hash this hash-keyword _hash))
-
-  cljs.core/INamed
-  (cljs.core/-name [_] name)
-  (cljs.core/-namespace [_] ns)
-
+  ;; printing at the REPL calls cljs.core function
   cljs.core/IPrintWithWriter
-  (cljs.core/-pr-writer [o writer _] (cljs.core/-write writer (str ":" fqn))))
+  (cljs.core/-pr-writer [o writer _] (-write writer (str ":" fqn))))
 
 (defn ^boolean keyword?
   "Return true if x is a Keyword"
@@ -2118,7 +2074,7 @@
 (defn namespace
   "Returns the namespace String of a symbol or keyword, or nil if not present."
   [x]
-  (if (implements? INamed x)
+  (if (corale.core/implements? INamed x)
     (-namespace ^not-native x)
     (throw (js/Error. (str "Doesn't support namespace: " x)))))
 
@@ -2367,32 +2323,17 @@
 
 ;; Symbol is imported from cljs.core anyway
 
-;; conj (for destructuring)
-;; -arr (for destructuring)
-;; array
-;; get (for destructuring)
-;; drop (for destructuring)
-;; instance? (for destructuring)
-;; apply
-;; js-obj (for destructuring)
-;; alength
-;; find-in-arr (for destructuring)
-;; assert
-
-;; str
-
-
 ;;;;;;;;;;;;;;;;
 
-;; when-let, if-let
+;; when-let
+;; Fn type -> cljs.core at the moment
 
-;; check variadic fn (arr) instead of (seq)
 ;; find a way to easy diff cljs.core with corale (macros)
-;; doseq (seq) (-nth)
-
 
 ;;;;;;;;;;;;;;;
 
-;; test make-array
-;; test distinct
 ;; ci-reduce, array-reduce not implemented
+
+;; fast-path-protocols
+;; revert compiler emit :meta, throw error
+;; constant table

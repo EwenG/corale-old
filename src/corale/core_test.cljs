@@ -72,6 +72,13 @@
 
 (instance? Symbol 'r)
 (instance? Keyword :f)
+(instance? Keyword "e")
+
+(symbol? 'e)
+(symbol? 3)
+
+(symbol "e")
+#_(symbol "e" "g")
 
 #_(arr #js {:e "e"})
 

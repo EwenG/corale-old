@@ -1,5 +1,7 @@
 (in-ns 'cljs.compiler)
 
+(alter-var-root #'ana/constants-ns-sym (constantly 'corale.core.constants))
+
 (defn corale-emits-keyword [kw]
   (let [ns   (namespace kw)
         name (name kw)]
@@ -36,14 +38,31 @@
 (defmethod emit-constant clojure.lang.Keyword [x]
   (if (-> @env/*compiler* :options :emit-constants)
     (let [value (-> @env/*compiler* ::ana/constant-table x)]
-      (emits "cljs.core." value))
+      (emits "corale.core." value))
     (corale-emits-keyword x)))
 
 (defmethod emit-constant clojure.lang.Symbol [x]
   (if (-> @env/*compiler* :options :emit-constants)
-    (let [value (-> @env/*compiler* ::ana/constant-table x)]
-      (emits "cljs.core." value))
-    (corale-emits-symbol x)))
+      (let [value (-> @env/*compiler* ::ana/constant-table x)]
+        (emits "corale.core." value))
+      (corale-emits-symbol x)))
+
+(defmethod emit* :if
+  [{:keys [test then else env unchecked]}]
+  (let [context (:context env)
+        checked (not (or unchecked (safe-test? env test)))]
+    (cond
+      (truthy-constant? test) (emitln then)
+      (falsey-constant? test) (emitln else)
+      :else
+      (if (= :expr context)
+        (emits "(" (when checked "corale.core.truth_") "(" test ")?" then ":" else ")")
+        (do
+          (if checked
+            (emitln "if(corale.core.truth_(" test ")){")
+            (emitln "if(" test "){"))
+          (emitln then "} else {")
+          (emitln else "}"))))))
 
 (defn corale-emit-apply-to
   [{:keys [name params env]}]
@@ -301,6 +320,28 @@
            (emits "(" f fprop " ? " f fprop "(" (comma-sep args) ") : " f ".call(" (comma-sep (cons "null" args)) "))"))
          (emits f ".call(" (comma-sep (cons "null" args)) ")"))))))
 
+(defmethod emit* :meta
+  [{:keys [expr meta env]}]
+  (emit-wrap env
+             (emits expr)))
+
+(alter-var-root #'emit-constants-table
+                (constantly (fn [table]
+                              (emitln "goog.provide('" (munge ana/constants-ns-sym) "');")
+                              (emitln "goog.require('corale.core');")
+                              (doseq [[sym value] table]
+                                (let [ns   (namespace sym)
+                                      name (name sym)]
+                                  (emits "corale.core." value " = ")
+                                  (cond
+                                    (keyword? sym) (emits-keyword sym)
+                                    (symbol? sym) (emits-symbol sym)
+                                    :else (throw
+                                           (ex-info
+                                            (str "Cannot emit constant for type " (type sym))
+                                            {:error :invalid-constant-type})))
+                                  (emits ";\n"))))))
+
 (comment
   (def aenv (assoc-in (ana/empty-env) [:ns :name] 'corale.core))
   (def cenv (cljs.env/default-compiler-env))
@@ -316,6 +357,16 @@
     (cljs.compiler/emit
      (cljs.analyzer/analyze
       aenv
-      '(prn 'e))))
+      '(def symbol
+         "Returns a Symbol with the given namespace and name."
+         (corale.core/fn
+           [name]
+           (corale.core/if (corale.core/symbol? name)
+             name
+             (let [idx (.indexOf name "/")]
+               (if (corale.core/< idx 1)
+                 (corale.core/symbol nil name)
+                 (corale.core/symbol (.substring name 0 idx)
+                                     (.substring name (corale.core/inc idx) (. name -length)))))))))))
   
   )

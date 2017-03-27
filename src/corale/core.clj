@@ -1,6 +1,6 @@
 (ns corale.core
   (:refer-clojure :exclude [identical? nil? number? some? string? dotimes instance? symbol?
-                            make-array
+                            make-array implements? satisfies?
                             and or if-not
                             alength aclone
                             deftype extend-type defprotocol
@@ -29,9 +29,10 @@
 
 (core/defmacro exclude-core []
   `(refer-clojure :exclude
-                  '[~'instance? ~'identical? ~'nil? ~'array? ~'number? ~'not ~'some? ~'object?
-                    ~'string? ~'char? ~'any? ~'type ~'type->str
-                    ~'apply
+                  '[~'truth_
+                    ~'instance? ~'identical? ~'nil? ~'array? ~'number? ~'not ~'some? ~'object?
+                    ~'string? ~'char? ~'any? ~'type ~'type->str ~'implements? ~'satisfies?
+                    ~'apply ~'pr-opts
                     ~'make-array ~'array ~'dotimes
                     ~'and ~'or ~'if-not
                     ~'system-time
@@ -40,8 +41,8 @@
                     ~'into-array ~'reduce
                     ~'js-invoke
                     ~'IFn ~'ICollection ~'ILookup ~'IEquiv ~'-invoke ~'-lookup ~'-equiv
-                    ~'IWriter ~'IPrintWithWriter ~'StringBufferWriter ~'->StringBufferWriter
-                    ~'-write ~'-flush ~'pr-str* ~'-pr-writer
+                    ~'IPrintWithWriter
+                    ~'pr-str* ~'-pr-writer
                     ~'int-rotate-left ~'imul ~'m3-seed ~'m3-C1 ~'m3-C2 ~'m3-mix-K1 ~'m3-mix-H1
                     ~'m3-fmix ~'m3-hash-int ~'m3-hash-unencoded-chars
                     ~'string-hash-cache ~'string-hash-cache-count
@@ -114,8 +115,10 @@
                     ~'apply-to ~'gen-apply-to
                     ~'not=
                     ~'defn defn- ~'fn ~'let
+                    ~'set
                     
                     ~'coercive-= ~'coercive-boolean  ~'fn->comparator ~'compare-indexed
+                    ~'coercive-not
                     
                     ~'Atom ~'->Atom ~'atom ~'add-watch ~'remove-watch ~'reset! ~'swap!
                     ~'compare-and-set! ~'set-validator! ~'get-validator]))
@@ -123,7 +126,7 @@
 (core/defmacro require-corale []
   `(require '[corale.core :refer
               [~'instance? ~'identical? ~'nil? ~'array? ~'number? ~'not ~'some? ~'object?
-               ~'string? ~'char? ~'any? ~'type
+               ~'string? ~'char? ~'any? ~'type ~'implements?
                ~'apply
                ~'make-array ~'array
                ~'and ~'or
@@ -133,8 +136,8 @@
                ~'into-array ~'reduce
                ~'js-invoke
                ~'IFn ~'ICollection ~'ILookup ~'IEquiv ~'-lookup ~'-equiv ~'-invoke
-               ~'IWriter ~'IPrintWithWriter ~'StringBufferWriter ~'->StringBufferWriter
-               ~'-write ~'-flush ~'pr-str* ~'-pr-writer
+               ~'IPrintWithWriter
+               ~'pr-str* ~'-pr-writer
                ~'int-rotate-left
                ~'= ~'compare
                ~'hash ~'IHash ~'-hash
@@ -200,10 +203,9 @@
                ~'int-array ~'long-array ~'double-array ~'object-array
                ~'concat
                ~'not=
+               ~'set
 
-               ~'arr ~'IArrayable ~'-arr
-               
-               ~'defn ~'fn ~'let]]))
+               ~'arr ~'IArrayable ~'-arr]]))
 
 (defmacro require-corale-macros []
   (ana/parse 'ns* &env
@@ -215,7 +217,7 @@
                    defprotocol this-as + false? inc true? zero?
                    < > + - == / * int bit-xor bit-or bit-shift-left
                    unsigned-bit-shift-right bit-and js-mod bit-shift-right
-                   str dec >= pos? neg? keyword? symbol? doseq unchecked-inc
+                   str dec >= pos? neg? keyword? doseq unchecked-inc
                    coercive-boolean if-not defn-]]))
              nil nil)
   nil)
@@ -307,6 +309,9 @@
   ([test then] `(if-not ~test ~then nil))
   ([test then else]
    `(if (corale.core/not ~test) ~then ~else)))
+
+(core/defmacro coercive-not [x]
+  (bool-expr (core/list 'js* "(!~{})" x)))
 
 (core/defmacro coercive-= [x y]
   (bool-expr (core/list 'js* "(~{} == ~{})" x y)))
@@ -728,7 +733,7 @@
           [`(set! ~(extend-prefix type-sym pprefix) cljs.core/PROTOCOL_SENTINEL)])
         (mapcat
           (core/fn [sig]
-            (if (= psym 'cljs.core/IFn)
+            (if (= psym 'corale.core/IFn)
               (add-ifn-methods type type-sym sig)
               (add-proto-methods* pprefix type type-sym sig)))
           sigs)))))
@@ -1055,10 +1060,10 @@
                                 (. ~(first sig) ~slot ~@sig)
                                 (let [x# (if (nil? ~(first sig)) nil ~(first sig))
                                       m# (aget ~(fqn fname) (goog/typeOf x#))]
-                                  (core/if-not (nil? m#)
+                                  (if-not (nil? m#)
                                     (m# ~@sig)
                                     (let [m# (aget ~(fqn fname) "_")]
-                                      (core/if-not (nil? m#)
+                                      (if-not (nil? m#)
                                         (m# ~@sig)
                                         (throw
                                          (missing-protocol
@@ -1099,6 +1104,62 @@
        (def ~psym (~'js* "function(){}"))
        ~@(map method methods)
        (set! ~'*unchecked-if* false))))
+
+(core/defmacro implements?
+  "EXPERIMENTAL"
+  [psym x]
+  (core/let [p          (:name
+                         (cljs.analyzer/resolve-var
+                          (dissoc &env :locals) psym))
+             prefix     (protocol-prefix p)
+             xsym       (bool-expr (gensym))
+             [part bit] (fast-path-protocols p)
+             msym       (symbol
+                         (core/str "-cljs$lang$protocol_mask$partition" part "$"))]
+    (core/if-not (core/symbol? x)
+      `(let [~xsym ~x]
+         (if ~xsym
+           (if (or ~(if bit `(unsafe-bit-and (. ~xsym ~msym) ~bit) false)
+                   (identical? cljs.core/PROTOCOL_SENTINEL (. ~xsym ~(symbol (core/str "-" prefix)))))
+             true
+             false)
+           false))
+      `(if-not (nil? ~x)
+         (if (or ~(if bit `(unsafe-bit-and (. ~x ~msym) ~bit) false)
+                 (identical? cljs.core/PROTOCOL_SENTINEL (. ~x ~(symbol (core/str "-" prefix)))))
+           true
+           false)
+         false))))
+
+(core/defmacro satisfies?
+  "Returns true if x satisfies the protocol"
+  [psym x]
+  (core/let [p          (:name
+                          (cljs.analyzer/resolve-var
+                            (dissoc &env :locals) psym))
+             prefix     (protocol-prefix p)
+             xsym       (bool-expr (gensym))
+             [part bit] (fast-path-protocols p)
+             msym       (symbol
+                          (core/str "-cljs$lang$protocol_mask$partition" part "$"))]
+    (core/if-not (core/symbol? x)
+      `(let [~xsym ~x]
+         (if-not (nil? ~xsym)
+           (if (or ~(if bit `(unsafe-bit-and (. ~xsym ~msym) ~bit) false)
+                    (identical? cljs.core/PROTOCOL_SENTINEL (. ~xsym ~(symbol (core/str "-" prefix)))))
+             true
+             (if (coercive-not (. ~xsym ~msym))
+               (cljs.core/native-satisfies? ~psym ~xsym)
+               false))
+           (cljs.core/native-satisfies? ~psym ~xsym)))
+      `(if-not (nil? ~x)
+         (if (or ~(if bit `(unsafe-bit-and (. ~x ~msym) ~bit) false)
+                  (identical? cljs.core/PROTOCOL_SENTINEL (. ~x ~(symbol (core/str "-" prefix)))))
+           true
+           (if (coercive-not (. ~x ~msym))
+             (cljs.core/native-satisfies? ~psym ~x)
+             false))
+         (cljs.core/native-satisfies? ~psym ~x)))))
 
 (core/defmacro dotimes
   "bindings => name n
@@ -1408,6 +1469,11 @@
           (set! (. ~sym ~'-cljs$lang$applyTo)
                 ~(apply-to)))))))
 
+;; internal - do not use.
+(core/defmacro truth_ [x]
+  (core/assert (core/symbol? x) "x is substituted twice")
+  (core/list 'js* "(~{} != null && ~{} !== false)" x x))
+
 (core/defmacro js-arguments []
   (core/list 'js* "arguments"))
 
@@ -1640,7 +1706,7 @@
                             m) fdecl (:def-emits-var &env))
 
              :else
-             (core/list 'def (with-meta name m)
+             (core/list 'def name
                         ;;todo - restore propagation of fn name
                         ;;must figure out how to convey primitive hints to self calls first
                         (cons `fn fdecl))))))
@@ -1650,7 +1716,7 @@
 (core/defmacro defn-
   "same as defn, yielding non-public def"
   [name & decls]
-  (list* `defn (with-meta name (assoc (meta name) :private true)) decls))
+  (list* `defn name decls))
 
 (core/defmacro loop
   "Evaluates the exprs in a lexical context in which the symbols in
@@ -1728,7 +1794,7 @@
                                                 ~isym     0
                                                 ~indexsym 0]
                                            (if (coercive-boolean (< ~isym ~countsym))
-                                             (let [~k (cljs.core/-nth ~chunksym ~isym)]
+                                             (let [~k (-nth ~chunksym ~isym)]
                                                ~subform-chunk
                                                ~@(core/when needrec [recform-chunk]))
                                              (when (< ~indexsym ~lengthsym)
